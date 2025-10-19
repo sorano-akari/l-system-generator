@@ -96,7 +96,7 @@
             gap: 8px; 
         }
 
-        /* --- プレビューエリア (左カラムの最下部に移動) --- */
+        /* --- プレビューエリア (左カラムの最下部に移動) */
         #preview-area {
             padding: 8px; /* パディングを少し小さく */
             border-radius: 6px;
@@ -213,15 +213,26 @@
         .card[data-command="Y"], .lhs-card[data-command="Y"] { background-image: url('command-y-variable.png'); }
         
         /* --- その他パーツ --- */
-        #depth-controls { display: flex; align-items: center; gap: 5px; margin-bottom: 10px; }
+        #depth-controls { display: flex; align-items: center; gap: 5px; margin-top: 5px; margin-bottom: 10px; }
         #generate-reset-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; } 
         .control-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #5a5a5a; }
         .zoom-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
 
         /* パフォーマンス制限機能のUI */
-        .perf-limit-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #5a5a5a; }
+        .perf-limit-group { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #5a5a5a; }
         .perf-limit-group input { width: 60px; }
         .perf-limit-group small { display: block; margin-top: 5px; color: #888; font-size: 0.8em; }
+        
+        /* Depthコントロールとパフォーマンス情報の配置を調整 */
+        .depth-info-container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ⭐️ パフォーマンス情報のスタイルを調整 */
+        .perf-limit-group small {
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -302,7 +313,16 @@
 
                 <div id="parameters">
                     <h3>描画パラメータ</h3>
-                    <label for="depth">世代 (Depth): **(最大<span id="max-depth-limit">9</span>)**</label>
+                    
+                    <div class="perf-limit-group">
+                        <h3>描画速度制限 (パフォーマンス制御)</h3>
+                        <label for="target-draw-time">最大描画時間 (ms):</label>
+                        <input type="number" id="target-draw-time" value="500" min="100" step="10">
+                        <small>前回の描画時間: <span id="last-draw-time">0</span> ms</small>
+                        <small>制限深度: **(最大 <span id="limited-depth-info">適用なし</span>)**</small>
+                    </div>
+
+                    <label for="depth">世代 (Depth): **(上限<span id="max-depth-limit">99</span>)**</label>
                     <div id="depth-controls">
                         <button id="depth-down">▼</button>
                         <span id="depth-value">0</span>
@@ -312,9 +332,9 @@
                     <div class="control-group">
                         <h3>線の太さ</h3>
                         <div id="line-width-options" style="display: flex; gap: 15px; margin-top: 5px;">
-                            <label><input type="radio" name="lineWidth" value="fine"> 細</label>
-                            <label><input type="radio" name="lineWidth" value="medium" checked> 中</label>
-                            <label><input type="radio" name="lineWidth" value="bold"> 太</label>
+                            <label><input type="radio" name="lineWidth" value="fine"> 細 (1.0)</label>
+                            <label><input type="radio" name="lineWidth" value="medium" checked> 中 (2.0)</label>
+                            <label><input type="radio" name="lineWidth" value="bold"> 太 (3.5)</label>
                         </div>
                     </div>
 
@@ -327,22 +347,13 @@
                         <h3>表示オプション</h3>
                         <div class="depth-color-option" style="margin-top: 10px;">
                             <input type="checkbox" id="color-by-depth" checked>
-                            <label for="color-by-depth">世代ごとに色分け</label>
+                            <label for="color-by-depth">世代ごとに色分け (鮮やか)</label>
                         </div>
                         <div class="depth-color-option">
                             <input type="checkbox" id="keep-drawing">
                             <label for="keep-drawing">前の世代を残像表示</label>
                         </div>
                     </div>
-
-                    <div class="perf-limit-group">
-                        <h3>描画速度制限</h3>
-                        <label for="target-draw-time">最大描画時間 (ms):</label>
-                        <input type="number" id="target-draw-time" value="500" min="100" step="10">
-                        <small>前回の描画時間: <span id="last-draw-time">0</span> ms</small>
-                        <small>制限深度: <span id="limited-depth-info">適用なし</span></small>
-                    </div>
-
                     
                     <div class="control-group">
                         <h3>ズーム &amp; パン</h3>
@@ -380,28 +391,23 @@
             // I. 状態管理と初期化
             // ===========================================
             const HISTORY_LIMIT = 20;
-            const MAX_DEPTH_HARD_LIMIT = 15; // 物理的な最大値
+            // ⭐️ 修正: 物理的な最大値を99に変更し、実質的な制限を解除
+            const MAX_DEPTH_HARD_LIMIT = 99; 
             const history = [];
             let historyIndex = -1;
             
             const state = {
                 depth: 0, 
                 globalAngle: 60, 
-                rules: { 'X': '', 'F': 'F+(60)F-(60)F-(60)F+(60)F', 'Y': '' }, // 初期ルールはダミー
-                colorPalette: [
-                    '#FF3F46', '#FFC82E', '#58D683', '#2E86C1', '#9B59B6', 
-                    '#F39C12', '#1ABC9C', '#D98880', '#4A235A', '#FAD7A0', 
-                    '#D35400', '#5D6D7E'  
-                ],
+                rules: { 'X': '', 'F': 'F+(60)F-(60)F-(60)F+(60)F', 'Y': '' }, 
                 angleCommands: ['+', '-'],
                 zoom: 1.0,           
                 panX: 0,             
                 panY: 0,
-                // 新しいオプション
                 lineWidthOption: 'medium', 
                 // パフォーマンス計測用
                 targetDrawTime: 500, // ms
-                limitedDepth: MAX_DEPTH_HARD_LIMIT // パフォーマンス制限による現在の最大深度
+                limitedDepth: MAX_DEPTH_HARD_LIMIT 
             };
             
             let draggedElement = null;
@@ -433,17 +439,15 @@
             const zoomSlider = document.getElementById('zoom-slider');
             const zoomValueSpan = document.getElementById('zoom-value');
             
-            // 描画エリアのサイズをDOM要素から取得してcanvasに適用
             function resizeCanvas() {
                 const mainWrapper = document.getElementById('main-canvas-wrapper');
-                const prevWrapper = document.getElementById('preview-area'); // プレビューの親要素
+                const prevWrapper = document.getElementById('preview-area'); 
                 
                 mainCanvas.width = mainWrapper.clientWidth;
                 mainCanvas.height = mainWrapper.clientHeight; 
                 
-                // プレビューキャンバスの幅と高さを親要素に合わせて調整
-                previewCanvas.width = prevWrapper.clientWidth - 16; // padding分を引く (8px * 2)
-                previewCanvas.height = 200; // CSSで固定した高さ
+                previewCanvas.width = prevWrapper.clientWidth - 16; 
+                previewCanvas.height = 200; 
                 
                 if (history.length > 0 || state.depth >= 0) { 
                     regenerateAndDraw(); 
@@ -455,7 +459,7 @@
 
 
             // ===========================================
-            // II. 履歴管理 (完全に実装)
+            // II. 履歴管理
             // ===========================================
             
             function updateHistoryButtons() {
@@ -472,7 +476,8 @@
                     zoom: state.zoom,
                     panX: state.panX,
                     panY: state.panY,
-                    lineWidthOption: state.lineWidthOption 
+                    lineWidthOption: state.lineWidthOption,
+                    targetDrawTime: state.targetDrawTime 
                 };
             }
 
@@ -482,21 +487,18 @@
                 state.zoom = savedState.zoom;
                 state.panX = savedState.panX;
                 state.panY = savedState.panY;
-                // 線の太さのオプションは履歴からロードし、デフォルト値'medium'をフォールバックとして使用
                 state.lineWidthOption = savedState.lineWidthOption || 'medium'; 
+                state.targetDrawTime = savedState.targetDrawTime || 500; 
                 
-                // UIの更新
                 document.getElementById('axiom-input').value = savedState.axiom;
                 updateAngle(savedState.globalAngle, false); 
+                targetDrawTimeInput.value = state.targetDrawTime; 
                 updateZoom(savedState.zoom, false); 
                 updateDepth(savedState.depth, false); 
 
-                // 線の太さのラジオボタンを更新
                 const lineWidthRadio = document.querySelector(`input[name="lineWidth"][value="${state.lineWidthOption}"]`);
                 if(lineWidthRadio) lineWidthRadio.checked = true;
 
-
-                // ルールをDOMに反映
                 const railF = document.getElementById('rhs-rail-f');
                 const railX = document.getElementById('rhs-rail-x');
                 const railY = document.getElementById('rhs-rail-y'); 
@@ -511,7 +513,6 @@
             }
 
             function saveHistory() {
-                // ... (履歴保存ロジックは変更なし) ...
                 if (historyIndex < history.length - 1) {
                     history.splice(historyIndex + 1);
                 }
@@ -545,47 +546,37 @@
             // III. UIコントロールと描画トリガー
             // ===========================================
 
-            /**
-             * 描画に必要なオートスケールとオートパンを計算する
-             */
             function calculateAutoTransform(lSystemString, currentDepth, canvasWidth, canvasHeight) {
                 const rules = getCurrentRules();
-                // 'F'の置換規則に含まれる 'F' または 'f' の数を取得
                 const F_rule_Ff_count = (rules['F'] ? (rules['F'].match(/[Ff]/g) || []).length : 1);
                 const F_multiplier = F_rule_Ff_count > 0 ? F_rule_Ff_count : 1;
                 
-                // 動的線分長を計算: 世代が上がるごとに、描画される図形の実サイズが一定になるように調整
                 const dynamicLineLength = 1.0 / Math.pow(F_multiplier, currentDepth); 
                 
-                // この動的線分長を使用してバウンディングボックスを計算 (実サイズ)
                 const actualBounds = getLSystemBounds(lSystemString, state.globalAngle, dynamicLineLength);
                 
-                const targetRatio = 0.9; // 画面の90%を使用
+                const targetRatio = 0.9; 
                 const targetWidth = canvasWidth * targetRatio;
                 const targetHeight = canvasHeight * targetRatio;
                 
                 let autoScale = 1.0;
                 
                 if (actualBounds.width > 0 && actualBounds.height > 0) {
-                     // 実際のバウンディングボックスサイズを画面に収めるためのスケール
                      autoScale = Math.min(targetWidth / actualBounds.width, targetHeight / actualBounds.height);
                 } else if (lSystemString.match(/[Ff]/g)) {
-                    // F,fはあるがバウンズが0の場合（直線など）。適当な初期ズームを設定
                     autoScale = Math.min(canvasWidth, canvasHeight) * 0.5;
                 } else {
-                    autoScale = 1.0; // 描画要素がない場合
+                    autoScale = 1.0; 
                 }
                 
-                // オートパン計算 (中央揃え)
                 const autoPanX = canvasWidth / 2 - (actualBounds.width * autoScale) / 2 - actualBounds.minX * autoScale;
                 const autoPanY = canvasHeight / 2 - (actualBounds.height * autoScale) / 2 - actualBounds.minY * autoScale;
 
                 return { autoScale, autoPanX, autoPanY, bounds: actualBounds, dynamicLineLength };
             }
 
-            // 描画機能の本体。全パラメーターの変更はこの関数をコールする
             function regenerateAndDraw() {
-                const startTime = performance.now(); // 計測開始
+                const startTime = performance.now(); 
                 
                 const axiom = document.getElementById('axiom-input').value;
                 const iterations = state.depth;
@@ -596,23 +587,36 @@
                 const lSystemStrings = generateLSystemWithDepth(axiom, state.rules, iterations);
                 drawLSystem(mainCtx, lSystemStrings, true);
 
-                const endTime = performance.now(); // 計測終了
+                const endTime = performance.now(); 
                 const drawTime = (endTime - startTime).toFixed(2);
                 lastDrawTimeSpan.textContent = drawTime;
                 
-                // パフォーマンス制限のチェックと適用
-                checkAndLimitDepth(drawTime);
+                checkAndLimitDepth(parseFloat(drawTime));
             }
 
             /**
              * 世代の更新。ユーザー操作か履歴ロードかでsaveHistoryを制御
              */
-            const updateDepth = (newDepth, shouldSave = true) => {
-                const actualMaxDepth = Math.min(MAX_DEPTH_HARD_LIMIT, state.limitedDepth);
-                state.depth = Math.min(Math.max(newDepth, 0), actualMaxDepth); 
+const updateDepth = (newDepth, shouldSave = true) => {
+                // ⭐️ 修正部分:
+                
+                // 物理的な上限と、パフォーマンスによる上限の、より小さい方を採用
+                const actualMaxDepth = Math.min(MAX_DEPTH_HARD_LIMIT, state.limitedDepth); 
+                
+                // 1. 増加方向のチェック: 上限を超えないように制限する
+                if (newDepth > state.depth) {
+                    newDepth = Math.min(newDepth, actualMaxDepth);
+                }
+
+                // 2. 減少方向のチェック: 0未満にならないように制限する（上限チェックは行わない）
+                state.depth = Math.max(newDepth, 0); 
+                
+                // ⭐️ 修正ここまで
+                
                 depthValueSpan.textContent = state.depth;
                 mainDepthDisplay.textContent = state.depth;
-                maxDepthLimitSpan.textContent = actualMaxDepth;
+                // ⭐️ Depthコントロール横の上限表示を更新
+                maxDepthLimitSpan.textContent = actualMaxDepth; 
                 
                 regenerateAndDraw(); 
                 if (shouldSave) saveHistory();
@@ -621,65 +625,60 @@
             document.getElementById('depth-up').addEventListener('click', () => { updateDepth(state.depth + 1); });
             document.getElementById('depth-down').addEventListener('click', () => { updateDepth(state.depth - 1); });
             
-            // 描画時間制限の更新
             targetDrawTimeInput.addEventListener('change', (e) => {
                 state.targetDrawTime = parseInt(e.target.value);
-                // 新しい制限時間で再チェック
                 checkAndLimitDepth(parseFloat(lastDrawTimeSpan.textContent));
-                updateDepth(state.depth, true); // 深度を再調整
+                updateDepth(state.depth, true); 
             });
 
             /**
              * 描画時間に基づいて深度の上限を自動調整する
              */
             function checkAndLimitDepth(lastDrawTime) {
-                const F_rule_Ff_count = (getCurrentRules()['F'] ? (getCurrentRules()['F'].match(/[Ff]/g) || []).length : 1);
+                const rules = getCurrentRules();
+                const F_rule_Ff_count = (rules['F'] ? (rules['F'].match(/[Ff]/g) || []).length : 1);
                 const F_multiplier = F_rule_Ff_count > 0 ? F_rule_Ff_count : 1;
-                
-                // F->F などの変化がない場合は処理しない
-                if (F_multiplier <= 1 && state.depth < MAX_DEPTH_HARD_LIMIT) {
-                    state.limitedDepth = MAX_DEPTH_HARD_LIMIT;
-                    limitedDepthInfoSpan.textContent = `適用なし (乗数 ${F_multiplier.toFixed(1)}x)`;
-                    maxDepthLimitSpan.textContent = MAX_DEPTH_HARD_LIMIT;
-                    return;
-                }
                 
                 let newLimitedDepth = MAX_DEPTH_HARD_LIMIT;
                 
-                // ターゲットタイムを超えた場合
-                if (lastDrawTime > state.targetDrawTime && state.depth > 0) {
-                    const timeRatio = lastDrawTime / state.targetDrawTime;
-                    const logRatio = Math.log(timeRatio) / Math.log(F_multiplier);
-                    newLimitedDepth = Math.max(1, Math.floor(state.depth - logRatio));
+                if (F_multiplier <= 1) {
+                    newLimitedDepth = MAX_DEPTH_HARD_LIMIT;
+                    limitedDepthInfoSpan.textContent = `${MAX_DEPTH_HARD_LIMIT} (展開なし)`;
                     
-                    limitedDepthInfoSpan.textContent = `深度 ${newLimitedDepth}`;
-                    state.limitedDepth = newLimitedDepth;
+                } else if (lastDrawTime > 0) {
+                    const timeRatio = state.targetDrawTime / lastDrawTime; 
+                    
+                    if (timeRatio >= F_multiplier) {
+                        newLimitedDepth = MAX_DEPTH_HARD_LIMIT;
+                        limitedDepthInfoSpan.textContent = `${MAX_DEPTH_HARD_LIMIT} (推定: ${(lastDrawTime * F_multiplier).toFixed(0)} ms)`;
 
-                } else if (lastDrawTime * F_multiplier < state.targetDrawTime && state.depth < MAX_DEPTH_HARD_LIMIT) {
-                    // ターゲットタイムよりも十分速い場合
-                    if (lastDrawTime * F_multiplier < state.targetDrawTime) {
-                        newLimitedDepth = Math.min(MAX_DEPTH_HARD_LIMIT, state.depth + 1);
-                        limitedDepthInfoSpan.textContent = `余裕あり (推定: ${(lastDrawTime * F_multiplier).toFixed(0)} ms)`;
-                        state.limitedDepth = newLimitedDepth;
+                    } else {
+                        const logRatio = Math.log(timeRatio) / Math.log(F_multiplier);
+                        
+                        newLimitedDepth = Math.min(MAX_DEPTH_HARD_LIMIT, Math.floor(state.depth + logRatio));
+                        
+                        newLimitedDepth = Math.max(1, newLimitedDepth);
+                        
+                        limitedDepthInfoSpan.textContent = `${newLimitedDepth} (時間制限)`;
                     }
-                    
-                } else if (lastDrawTime <= state.targetDrawTime) {
-                    // 制限時間内に収まっている場合、現在の深度を上限としない
-                    state.limitedDepth = MAX_DEPTH_HARD_LIMIT;
-                    limitedDepthInfoSpan.textContent = "適用なし";
+
+                } else {
+                    newLimitedDepth = MAX_DEPTH_HARD_LIMIT;
+                    limitedDepthInfoSpan.textContent = `${MAX_DEPTH_HARD_LIMIT} (未計測)`;
                 }
-                
-                maxDepthLimitSpan.textContent = state.limitedDepth;
+
+                state.limitedDepth = newLimitedDepth;
 
                 if (state.depth > state.limitedDepth) {
                     state.depth = state.limitedDepth;
                     depthValueSpan.textContent = state.depth;
                     mainDepthDisplay.textContent = state.depth;
                 }
+                
+                maxDepthLimitSpan.textContent = state.limitedDepth; 
             }
 
 
-            // 角度の更新と即時描画
             const updateAngle = (value, shouldSave = true) => {
                 state.globalAngle = parseFloat(value);
                 angleSlider.value = state.globalAngle;
@@ -718,7 +717,6 @@
                 mainDepthDisplay.textContent = state.depth; 
             });
 
-            // ズーム操作の処理
             const updateZoom = (value, shouldSave = true) => {
                 state.zoom = parseFloat(value);
                 zoomSlider.value = state.zoom;
@@ -735,7 +733,6 @@
                 document.getElementById('pan-reset-button').click(); 
             });
 
-            // パンリセットボタンの処理
             document.getElementById('pan-reset-button').addEventListener('click', () => {
                 state.panX = 0;
                 state.panY = 0;
@@ -743,7 +740,6 @@
                 saveHistory();
             });
 
-            // ホイールズーム機能
             mainCanvas.addEventListener('wheel', (e) => {
                 e.preventDefault(); 
                 
@@ -782,7 +778,6 @@
             });
 
 
-            // パン操作 (マウスドラッグ) の処理
             mainCanvas.addEventListener('mousedown', (e) => {
                 isDraggingCanvas = true;
                 lastMouseX = e.clientX;
@@ -819,30 +814,21 @@
             });
             
             // ===========================================
-            // IV. プリセット機能 (拡張)
+            // IV. プリセット機能
             // ===========================================
             
-            // ⭐️ プリセットを拡張
             const presets = {
-                // 1. コッホ曲線とその変形
                 "koch-curve": { axiom: 'F', rules: { F: 'F-(60)F++(60)F-(60)F', X: '', Y: '' }, angle: 60, depth: 4, lineWidthOption: 'medium' }, 
                 "koch-snowflake": { axiom: 'F++F++F', rules: { F: 'F-(60)F++(60)F-(60)F', X: '', Y: '' }, angle: 60, depth: 4, lineWidthOption: 'medium' },
                 "koch-island": { axiom: 'F+F+F+F', rules: { F: 'F-(90)F+(90)F+(90)F-(90)F', X: '', Y: '' }, angle: 90, depth: 3, lineWidthOption: 'medium' },
-
-                // 2. シェルピンスキー曲線とその変形
                 "sierpinski-arrowhead": { axiom: 'F', rules: { F: 'X+(60)F+(60)X', X: 'F-(60)X-(60)F', Y: '' }, angle: 60, depth: 5, lineWidthOption: 'medium' },
-                
-                // 3. 複雑なフラクタル
                 "dragon": { axiom: 'FX', rules: { F: 'F', X: 'X+(90)YF+', Y: '-(90)FX-Y' }, angle: 90, depth: 9, lineWidthOption: 'fine' }, 
-
-                // 4. 植物と木構造
                 "bush": { axiom: 'X', rules: { F: 'FF', X: 'F[+(25)X][-(25)X]F[-(25)X]+(25)X', Y: '' }, angle: 25, depth: 6, lineWidthOption: 'fine' },
                 "h-tree": { axiom: 'F', rules: { F: 'F[+(90)F][-(90)F]', X: '', Y: '' }, angle: 90, depth: 4, lineWidthOption: 'medium' }
             };
             
             function applyRulesToRail(railElement, ruleString, defaultAngle) {
                 railElement.innerHTML = '';
-                // 'F', 'X', 'Y', 'f', '+', '-', '[', ']' および角度表記を抽出
                 const tokens = ruleString.match(/([+\-])\(\d+(\.\d+)?\)|[FXfY[\]+\-]/g) || [];
                 
                 tokens.forEach(token => {
@@ -868,7 +854,6 @@
                 updateAngle(preset.angle, false); 
                 updateDepth(preset.depth, false); 
                 
-                // 線の太さもプリセットから適用
                 state.lineWidthOption = preset.lineWidthOption || 'medium'; 
                 const lineWidthRadio = document.querySelector(`input[name="lineWidth"][value="${state.lineWidthOption}"]`);
                 if(lineWidthRadio) lineWidthRadio.checked = true;
@@ -898,7 +883,7 @@
             });
 
             // ===========================================
-            // V. カード/ルールロジック (変更なし)
+            // V. カード/ルールロジック
             // ===========================================
             
             function getCardColorClass(command) {
@@ -967,7 +952,6 @@
                 regenerateAndDraw(); 
             });
             
-            // ⭐️ 改善点: スマートなランダムルール生成関数
             function generateSmartRHS(targetCommand, maxLength, globalAngle) {
                 const angleCommands = ['+', '-'];
                 let bracketBalance = 0;
@@ -976,40 +960,33 @@
                 const getTurnCommand = () => angleCommands[Math.floor(Math.random() * 2)];
                 const getRandomCommand = (commands) => commands[Math.floor(Math.random() * commands.length)];
 
-                // 1. Mandatory Core Components
                 let coreElements = [];
                 
                 if (targetCommand === 'F') {
-                    // Fルール: 描画と回転は必須、変数(再帰)を導入
                     coreElements.push('F');
                     coreElements.push(getTurnCommand());
                     coreElements.push('F'); 
-                    if (Math.random() < 0.6) coreElements.push(getRandomCommand(['X', 'Y', 'F'])); // 自己再帰 or 変数導入
+                    if (Math.random() < 0.6) coreElements.push(getRandomCommand(['X', 'Y', 'F'])); 
                     coreElements.push(getTurnCommand());
                 } else if (targetCommand === 'X' || targetCommand === 'Y') {
-                    // X/Yルール: 描画と枝分かれ(再帰)は必須
-                    coreElements.push(getRandomCommand(['F', 'f'])); // Draw/move command
+                    coreElements.push(getRandomCommand(['F', 'f'])); 
                     
-                    // Branch 1: Recursion
                     coreElements.push('['); bracketBalance++;
                     coreElements.push(getTurnCommand());
-                    coreElements.push(targetCommand); // Recursion
+                    coreElements.push(targetCommand); 
                     coreElements.push(']'); bracketBalance--;
                     
-                    // Branch 2: Complexity
                     if (Math.random() < 0.8) {
                         coreElements.push(getTurnCommand());
                         coreElements.push('['); bracketBalance++;
-                        coreElements.push(targetCommand); // Recursion
+                        coreElements.push(targetCommand); 
                         coreElements.push(getTurnCommand());
                         coreElements.push(']'); bracketBalance--;
                     }
                 }
                 
-                // 2. Build the initial string from core elements
                 rhs = coreElements.join('');
 
-                // 3. Fill the rest randomly
                 const fillCommands = ['F', 'f', '+', '-', '[', ']', 'X', 'Y']; 
                 const remainingLength = Math.max(0, maxLength - rhs.length);
                 
@@ -1027,20 +1004,17 @@
                             bracketBalance--;
                         }
                     } else if (angleCommands.includes(command)) {
-                         // ランダム要素で角度コマンドが出た場合は、強制的に一つ前のコマンドを挿入してバランスを取る
                          rhs += getTurnCommand();
                     } else {
                         rhs += command;
                     }
                 }
                 
-                // 4. Final bracket balancing
                 while (bracketBalance > 0) {
                     rhs += ']';
                     bracketBalance--;
                 }
                 
-                // 5. Apply angles to '+' and '-'
                 let finalRHS = '';
                 for(const char of rhs) {
                     if (angleCommands.includes(char)) {
@@ -1054,19 +1028,16 @@
             }
 
             document.getElementById('random-rule-button').addEventListener('click', () => {
-                // ⭐️ 改善点1: 代表的なフラクタル角度から選択
                 const FRACTAL_ANGLES = [90, 60, 45, 30, 22.5, 120, 18];
                 const randomGlobalAngle = FRACTAL_ANGLES[Math.floor(Math.random() * FRACTAL_ANGLES.length)];
                 
                 updateAngle(randomGlobalAngle, false);
                 
-                // ⭐️ 改善点2: より複雑なルールを生成するため、最大長を12に設定
                 const MAX_RULE_LENGTH = 12;
 
                 const initialAxiom = ['F', 'X', 'FX', 'X+F', 'Y'].sort(() => 0.5 - Math.random())[0];
                 document.getElementById('axiom-input').value = initialAxiom;
 
-                // ⭐️ 改善点3: スマートなルール生成関数を使用し、ルールの長さをランダムに決定
                 const randomRules = {
                     F: generateSmartRHS('F', Math.floor(Math.random() * (MAX_RULE_LENGTH - 5)) + 5, randomGlobalAngle),
                     X: generateSmartRHS('X', Math.floor(Math.random() * (MAX_RULE_LENGTH - 5)) + 5, randomGlobalAngle),
@@ -1077,7 +1048,6 @@
                 applyRulesToRail(document.getElementById('rhs-rail-x'), randomRules.X, randomGlobalAngle);
                 applyRulesToRail(document.getElementById('rhs-rail-y'), randomRules.Y, randomGlobalAngle);
 
-                // ⭐️ 改善点4: 初期深度を3に設定
                 updateDepth(3, false); 
                 
                 saveHistory();
@@ -1108,10 +1078,13 @@
             function generateLSystemWithDepth(axiom, rules, iterations) { 
                 let currentStrings = [axiom];
                 let allStrings = [axiom];
+                // ⭐️ セーフティネット: 文字列長の上限を500万から5000万に変更
+                const MAX_STRING_LENGTH = 50000000; 
+                
                 for (let i = 0; i < iterations; i++) {
                     let nextString = '';
-                    if (currentStrings[i].length > 1000000) { 
-                        console.warn(`Depth ${i+1} exceeds string length limit. Stopping generation.`);
+                    if (currentStrings[i].length > MAX_STRING_LENGTH) { 
+                        console.warn(`Depth ${i+1} exceeds string length limit (${MAX_STRING_LENGTH}). Stopping generation.`);
                         return allStrings;
                     }
                     for (const char of currentStrings[i]) {
@@ -1180,9 +1153,6 @@
                 };
             }
             
-            /**
-             * 選択された線の太さオプションに基づいたベースライン幅を取得する
-             */
             function getBaseLineWidth() {
                 switch (state.lineWidthOption) {
                     case 'fine': return 1.0;
@@ -1198,26 +1168,19 @@
                 const iterations = lSystemStrings.length - 1;
                 const lSystemString = lSystemStrings[iterations];
                 
-                // --- メインキャンバスの描画 ---
                 if (isMainCanvas) {
-                    // 1. オートスケールとオートパンを計算
                     const { autoScale, autoPanX, autoPanY, bounds, dynamicLineLength } = calculateAutoTransform(lSystemString, iterations, mainCanvas.width, mainCanvas.height);
                     
                     const startBaseX = 0; 
                     const startBaseY = 0;
 
-                    // 2. 最終変換の計算
                     const finalZoom = autoScale * state.zoom;
                     const finalPanX = autoPanX + state.panX;
                     const finalPanY = autoPanY + state.panY;
                     
-                    // 3. 描画実行
                     performDrawing(ctx, lSystemStrings, isMainCanvas, finalZoom, finalPanX, finalPanY, startBaseX, startBaseY, bounds, dynamicLineLength);
                     
                 } else {
-                    // --- プレビュー描画ロジック (Depth 1と2を使用) ---
-                    
-                    // 1世代目の文字列を使ってバウンディングボックスを計算 (Depth 1)
                     const previewStringForBounds = lSystemStrings[Math.min(1, lSystemStrings.length - 1)]; 
                     const previewBounds = getLSystemBounds(previewStringForBounds, state.globalAngle, 1.0);
                     
@@ -1236,12 +1199,10 @@
                     const previewPanY = previewCtx.canvas.height / 2 - (previewBounds.height * autoScale) / 2 - previewBounds.minY * autoScale;
 
 
-                    // プレビュー描画実行
                     performDrawing(ctx, lSystemStrings, false, autoScale, previewPanX, previewPanY, 0, 0, previewBounds, 1.0);
                 }
             }
 
-            // 実際の描画を実行するコア関数
             function performDrawing(ctx, lSystemStrings, isMainCanvas, scale, panX, panY, startBaseX, startBaseY, bounds, baseLineLength) {
                 const iterations = lSystemStrings.length - 1;
                 const colorByDepth = document.getElementById('color-by-depth').checked;
@@ -1251,13 +1212,15 @@
 
                 ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); 
                 
-                // ⭐️ 修正: 描画する世代の範囲を決定
                 const startDepth = isMainCanvas ? (keepDrawing ? 0 : iterations) : Math.min(1, iterations); 
                 const endDepth = isMainCanvas ? iterations : Math.min(2, iterations); 
                 
                 const rules = getCurrentRules();
                 const F_rule_Ff_count = (rules['F'] ? (rules['F'].match(/[Ff]/g) || []).length : 1);
                 const F_multiplier = F_rule_Ff_count > 0 ? F_rule_Ff_count : 1;
+
+                ctx.lineCap = 'round';   
+                ctx.lineJoin = 'round';  
 
                 for (let depth = startDepth; depth <= endDepth; depth++) {
                     const lSystemString = lSystemStrings[depth];
@@ -1269,13 +1232,13 @@
 
                     const lineLength = 1.0 / Math.pow(F_multiplier, depth);
                     
-                    // --- 線幅と色の設定 ---
                     if (isMainCanvas) {
-                        // メインキャンバスの線幅ロジック (ズーム対応)
-                        ctx.lineWidth = Math.max(0.5, baseWidth / scale) * (isMainCanvas ? 1 : 0.5); 
+                        ctx.lineWidth = baseWidth; 
                         
                         if (colorByDepth) {
-                            ctx.strokeStyle = state.colorPalette[depth % state.colorPalette.length];
+                            const HUE_STEP = 30; 
+                            const hue = (depth * HUE_STEP) % 360;
+                            ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
                         } else {
                             ctx.strokeStyle = 'white'; 
                         }
@@ -1285,21 +1248,19 @@
                             ctx.globalAlpha = 1.0;
                         }
                     } else {
-                        // ⭐️ プレビューの線幅と色
-                        ctx.lineWidth = 2.5; // 線の太さを固定で太く
+                        ctx.lineWidth = baseWidth * 1.5; 
                         ctx.globalAlpha = 1.0;
 
                         if (depth === 1) {
-                            ctx.strokeStyle = '#ffffff'; // 1世代目 (Depth 1) は白
+                            ctx.strokeStyle = 'hsl(0, 0%, 100%)'; 
                         } else if (depth === 2) {
-                            ctx.strokeStyle = '#4caf50'; // 2世代目 (Depth 2) は緑
+                            ctx.strokeStyle = 'hsl(120, 100%, 50%)'; 
                         } else {
-                            continue; // Depth 0はスキップ
+                            continue; 
                         }
                     }
 
-                    // --- 描画開始 ---
-                    ctx.beginPath();
+                    ctx.beginPath(); 
                     ctx.moveTo(x * scale + panX, y * scale + panY); 
                     
                     for (let i = 0; i < lSystemString.length; i++) {
@@ -1324,9 +1285,6 @@
                                 
                                 if (command === 'F') {
                                     ctx.lineTo(newX * scale + panX, newY * scale + panY);
-                                    ctx.stroke();
-                                    ctx.beginPath();
-                                    ctx.moveTo(newX * scale + panX, newY * scale + panY);
                                 } else {
                                     ctx.moveTo(newX * scale + panX, newY * scale + panY);
                                 }
@@ -1335,28 +1293,34 @@
                                 break;
                             case '+': currentAngle += turnAngle; break;
                             case '-': currentAngle -= turnAngle; break;
-                            case '[': stateStack.push({ x, y, angle: currentAngle }); break;
+                            case '[': 
+                                ctx.stroke(); 
+                                stateStack.push({ x, y, angle: currentAngle }); 
+                                ctx.beginPath(); 
+                                ctx.moveTo(x * scale + panX, y * scale + panY); 
+                                break;
                             case ']': 
+                                ctx.stroke(); 
                                 const stateRestored = stateStack.pop();
                                 if (stateRestored) {
                                     x = stateRestored.x;
                                     y = stateRestored.y;
                                     currentAngle = stateRestored.angle;
-                                    ctx.beginPath();
-                                    ctx.moveTo(x * scale + panX, y * scale + panY); 
                                 }
+                                ctx.beginPath(); 
+                                ctx.moveTo(x * scale + panX, y * scale + panY); 
                                 break;
                         }
                     }
+                    
+                    ctx.stroke(); 
                 }
             }
 
 
-            // --- プレビュー描画トリガー関数 ---
             function updatePreview() {
                 const axiom = document.getElementById('axiom-input').value;
                 state.rules = getCurrentRules();
-                // ⭐️ 修正: 2世代分生成 (Depth 2)
                 const lSystemStrings = generateLSystemWithDepth(axiom, state.rules, 2); 
                 drawLSystem(previewCtx, lSystemStrings, false);
             }
@@ -1364,19 +1328,16 @@
             document.getElementById('color-by-depth').addEventListener('change', regenerateAndDraw);
             document.getElementById('keep-drawing').addEventListener('change', regenerateAndDraw);
 
-            // 線の太さのラジオボタンの処理
             document.querySelectorAll('input[name="lineWidth"]').forEach(radio => {
                 radio.addEventListener('change', (e) => {
                     state.lineWidthOption = e.target.value;
                     saveHistory();
-                    regenerateAndDraw();
+                    regenerateAndDraw(); 
                 });
             });
 
 
-            // --- 初期実行 ---
             
-            // D&Dロジックの再設定 (パレットからのコピー)
             document.querySelectorAll('#palette-cards .card').forEach(card => {
                 card.setAttribute('draggable', true);
                 card.addEventListener('dragstart', (e) => {
@@ -1401,7 +1362,6 @@
             zoomValueSpan.textContent = state.zoom.toFixed(1);
             maxDepthLimitSpan.textContent = MAX_DEPTH_HARD_LIMIT;
             
-            // プリセット適用 -> 履歴保存 -> 初回描画実行
             applyPreset('koch-curve'); 
         });
     </script>
