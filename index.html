@@ -245,6 +245,27 @@
                             <option value="koch-island">コッホ・アイランド (四角)</option>
                             <option value="bush">ブッシュ/灌木 (植物)</option>
                             <option value="h-tree">H-Tree (木構造)</option>
+                            <option value="hilbert-curve">ヒルベルト曲線</option>
+                            <option value="sierpinski-gasket">シェルピンスキー・ギャスケット</option>
+                            <option value="square-koch">四角コッホ (基本)</option>
+                            <option value="fractal-plant">フラクタル・プラント</option>
+                            <option value="weed">雑草/密な灌木</option>
+                            <option value="peano-gosper">ピーノ・ゴスパー曲線</option>
+                            <option value="levy-c-curve">レヴィC曲線</option>
+                            <option value="cabbage">キャベツ/丸い樹木</option>
+                            <option value="bushy-plant">密なブッシュ</option>
+                            <option value="pentaplexity">ペンタプレキシティ</option>
+                            <option value="flake">フレーク (四角)</option>
+                            <option value="stochastic-plant-1">樹木 (対称)</option>
+                            <option value="koch-variation-1">コッホ曲線 (変種)</option>
+                            <option value="crystal">クリスタル</option>
+                            <option value="tree-1">樹木 (シンプル)</option>
+                            <option value="tree-2">樹木 (詳細)</option>
+                            <option value="maze">メイズ/迷路</option>
+                            <option value="t-square">Tスクエア</option>
+                            <option value="spiral">スパイラル</option>
+                            <option value="ring">リング</option>
+                            <option value="island-lake">アイランド/レイク</option>
                         </select>
                     </div>
 
@@ -391,20 +412,21 @@
                 </div>
         </div>
     </div>
-    
+
+
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-    
+    document.addEventListener('DOMContentLoaded', () => {
+
     const HISTORY_LIMIT = 20;
     const MAX_DEPTH_HARD_LIMIT = 99; 
     const history = [];
     let historyIndex = -1;
     let cardIdCounter = 0; 
-    
+
     const state = {
         depth: 0, 
         globalAngle: 60, 
-        rules: { 'X': '', 'F': 'F+(60)F-(120)F+(60)F', 'Y': '' }, 
+        rules: { 'X': '', 'F': '', 'Y': '' },
         angleCommands: ['+', '-'],
         zoom: 1.0,           
         panX: 0,             
@@ -419,24 +441,24 @@
         autoPanX: 0, 
         autoPanY: 0
     };
-    
+
     let isDraggingCanvas = false;
     let lastMouseX = 0;
     let lastMouseY = 0;
-    
+
     const mainCanvas = document.getElementById('main-canvas');
     const previewCanvas = document.getElementById('preview-canvas');
+    
+    // 描画コンテキストの定義
+    const mainCtx = mainCanvas ? mainCanvas.getContext('2d') : null;
+    const previewCtx = previewCanvas ? previewCanvas.getContext('2d') : null;
+
     const undoButton = document.getElementById('undo-button');
     const redoButton = document.getElementById('redo-button');
     const paletteContainer = document.getElementById('palette'); 
 
-    if (!mainCanvas || !previewCanvas || !paletteContainer) {
-        console.error("Critical DOM elements not found.");
-        return; 
-    }
-    
-    const mainCtx = mainCanvas.getContext('2d');
-    const previewCtx = previewCanvas.getContext('2d');
+    const presetSelect = document.getElementById('preset-select'); 
+    const axiomInput = document.getElementById('axiom-input');
     
     const depthValueSpan = document.getElementById('depth-value');
     const mainDepthDisplay = document.getElementById('main-depth-display');
@@ -450,13 +472,144 @@
 
     const zoomSlider = document.getElementById('zoom-slider');
     const zoomValueSpan = document.getElementById('zoom-value');
-    
+
     const thinningRateSlider = document.getElementById('thinning-rate-slider');
     const thinningRateValueSpan = document.getElementById('thinning-rate-value');
     const baseEmphasisGlowCheckbox = document.getElementById('base-emphasis-glow');
     const fillEnclosedCheckbox = document.getElementById('fill-enclosed-areas');
+    const syncAngleButton = document.getElementById('sync-angle-button');
+    const clearAllButton = document.getElementById('clear-all-button');
+    const randomRuleButton = document.getElementById('random-rule-button');
+    const resetDrawingButton = document.getElementById('reset-drawing-button');
+    const keepDrawingCheckbox = document.getElementById('keep-drawing');
+    const colorByDepthCheckbox = document.getElementById('color-by-depth');
 
+    // 角度を含むコマンドをパースするための正規表現
     const ANGLE_REGEX = /^([+\-])\((\d+(\.\d+)?)\)/;
+
+    // ===========================================
+    // DOM操作ユーティリティ
+    // ===========================================
+
+    function createCardContainer(command, angle) {
+        const container = document.createElement('div');
+        container.className = 'rhs-card-container';
+        container.dataset.command = command;
+        container.dataset.cardId = cardIdCounter++;
+        
+        const card = document.createElement('div');
+        card.className = `card ${getColorClass(command)}`;
+        card.dataset.command = command;
+        card.textContent = command; 
+        
+        let angleInputEl = null;
+        
+        // アングルコマンド（+ または -）の場合のみ角度入力を作成
+        if (state.angleCommands.includes(command)) {
+            angleInputEl = document.createElement('input');
+            angleInputEl.type = 'number';
+            angleInputEl.className = 'card-property angle-input';
+            angleInputEl.value = angle.toFixed(1);
+            angleInputEl.min = 1;
+            angleInputEl.max = 180;
+            angleInputEl.step = 0.1;
+            angleInputEl.addEventListener('input', () => {
+                regenerateAndDraw();
+                updatePreview();
+            });
+            angleInputEl.addEventListener('change', saveHistory);
+            
+            container.appendChild(angleInputEl);
+        }
+        
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = 'x';
+        deleteButton.className = 'delete-card-button';
+        deleteButton.style.cssText = 'position: absolute; top: -10px; right: -10px; width: 18px; height: 18px; border-radius: 50%; border: none; background: #e91e63; color: white; font-size: 0.7em; cursor: pointer; z-index: 5; line-height: 1; padding: 0; display: none;';
+        
+        container.appendChild(card);
+        container.appendChild(deleteButton);
+
+        container.addEventListener('mouseenter', () => deleteButton.style.display = 'block');
+        container.addEventListener('mouseleave', () => deleteButton.style.display = 'none');
+        
+        deleteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            container.remove();
+            regenerateAndDraw();
+            updatePreview();
+            saveHistory();
+        });
+        
+        return container;
+    }
+
+    function getColorClass(command) {
+        if (['F', '+', '-'].includes(command)) return 'color-green';
+        if (['X', 'Y', '['].includes(command)) return 'color-cyan';
+        if (['f', ']'].includes(command)) return 'color-magenta';
+        return '';
+    }
+
+    function getCurrentRules() {
+        const rules = { 'X': '', 'F': '', 'Y': '' };
+        
+        rhsRails.forEach(rail => {
+            const target = rail.dataset.target;
+            let ruleString = '';
+            
+            Array.from(rail.querySelectorAll('.rhs-card-container')).forEach(container => {
+                const command = container.dataset.command;
+                let part = command;
+                
+                if (state.angleCommands.includes(command)) {
+                    // 角度入力要素を探す
+                    const angleInput = container.querySelector('.angle-input');
+                    if (angleInput) { // 要素が存在する場合のみ角度を取得
+                        const angle = parseFloat(angleInput.value).toFixed(1);
+                        part += `(${angle})`; 
+                    }
+                }
+                ruleString += part;
+            });
+            
+            rules[target] = ruleString;
+        });
+        
+        return rules;
+    }
+
+    function applyRulesToRail(railElement, ruleString, globalAngle) {
+        // 既存の要素をクリアし、挿入マーカーを再配置
+        railElement.innerHTML = '<div class="insertion-marker"></div>';
+        
+        let i = 0;
+        while (i < ruleString.length) {
+            let command = ruleString[i];
+            let cardAngle = globalAngle;
+            let step = 1;
+            
+            // 角度付きコマンドをチェック
+            if (state.angleCommands.includes(command)) {
+                const angleMatch = ruleString.substring(i).match(ANGLE_REGEX);
+                if (angleMatch) {
+                    command = angleMatch[1]; // コマンド自体は + または -
+                    cardAngle = parseFloat(angleMatch[2]); // 括弧内の角度
+                    step = angleMatch[0].length; // コマンドと角度全体をスキップするためのステップ
+                }
+            }
+            
+            // 有効なL-システムコマンドのみカードを作成
+            if (['F', 'f', '+', '-', '[', ']', 'X', 'Y'].includes(command)) {
+                const cardContainer = createCardContainer(command, cardAngle);
+                // 挿入マーカーの直前にカードを挿入（常に末尾に追加）
+                const insertionMarker = railElement.querySelector('.insertion-marker');
+                railElement.insertBefore(cardContainer, insertionMarker);
+            }
+            
+            i += step;
+        }
+    }
 
 
     function resizeCanvas() {
@@ -489,6 +642,17 @@
         redoButton.disabled = historyIndex >= history.length - 1;
     }
 
+    function updateDepthButtonsState() {
+        const depthUpButton = document.getElementById('depth-up');
+        const depthDownButton = document.getElementById('depth-down');
+
+        if (depthUpButton && depthDownButton) {
+            depthUpButton.disabled = state.depth >= state.limitedDepth;
+            depthDownButton.disabled = state.depth <= 0;
+        }
+    }
+
+
     function getCurrentStateForHistory() {
         return {
             depth: state.depth,
@@ -502,7 +666,9 @@
             thinningRate: state.thinningRate, 
             baseEmphasisGlow: state.baseEmphasisGlow, 
             fillEnclosed: state.fillEnclosed, 
-            targetDrawTime: state.targetDrawTime 
+            targetDrawTime: state.targetDrawTime,
+            keepDrawing: keepDrawingCheckbox.checked,
+            colorByDepth: colorByDepthCheckbox.checked
         };
     }
 
@@ -513,10 +679,10 @@
         state.panX = savedState.panX;
         state.panY = savedState.panY;
         state.lineWidthOption = savedState.lineWidthOption || 'medium'; 
-        state.thinningRate = savedState.thinningRate || 0.8; 
+        state.thinningRate = savedState.thinningRate === undefined ? 0.8 : savedState.thinningRate;
         state.baseEmphasisGlow = savedState.baseEmphasisGlow === undefined ? true : savedState.baseEmphasisGlow; 
         state.fillEnclosed = savedState.fillEnclosed === undefined ? false : savedState.fillEnclosed; 
-        state.targetDrawTime = savedState.targetDrawTime || 500; 
+        state.targetDrawTime = savedState.targetDrawTime === undefined ? 500 : savedState.targetDrawTime;
         
         document.getElementById('axiom-input').value = savedState.axiom;
         updateAngle(savedState.globalAngle, false); 
@@ -531,6 +697,8 @@
         thinningRateValueSpan.textContent = state.thinningRate.toFixed(2);
         baseEmphasisGlowCheckbox.checked = state.baseEmphasisGlow;
         fillEnclosedCheckbox.checked = savedState.fillEnclosed; 
+        keepDrawingCheckbox.checked = savedState.keepDrawing === undefined ? false : savedState.keepDrawing;
+        colorByDepthCheckbox.checked = savedState.colorByDepth === undefined ? true : savedState.colorByDepth;
 
         const railF = document.getElementById('rhs-rail-f');
         const railX = document.getElementById('rhs-rail-x');
@@ -543,6 +711,7 @@
         regenerateAndDraw();
         updatePreview();
         updateHistoryButtons();
+        updateDepthButtonsState();
     }
 
     function saveHistory() {
@@ -551,13 +720,17 @@
         }
         
         const currentState = getCurrentStateForHistory();
-        history.push(currentState);
-        historyIndex = history.length - 1;
 
-        if (history.length > HISTORY_LIMIT) {
-            history.shift();
-            historyIndex--;
+        if (history.length === 0 || JSON.stringify(history[history.length - 1]) !== JSON.stringify(currentState)) {
+            history.push(currentState);
+            historyIndex = history.length - 1;
+
+            if (history.length > HISTORY_LIMIT) {
+                history.shift();
+                historyIndex--;
+            }
         }
+        
         updateHistoryButtons();
     }
     
@@ -597,7 +770,7 @@
                     }
                 }
 
-                if (rules[char]) {
+                if (rules[char] !== undefined) {
                     nextString += rules[char];
                 } else {
                     nextString += char;
@@ -613,7 +786,7 @@
     // 描画ロジックのユーティリティ
     // ===========================================
 
-    function getLSystemBounds(lSystemString, globalAngle, baseLineLength) {
+    function getLSystemBounds(lSystemString, globalAngle) {
         let x = 0;
         let y = 0;
         let minX = 0;
@@ -622,6 +795,7 @@
         let maxY = 0;
         let currentAngle = -90; 
         const stack = [];
+        const baseLineLength = 1.0; 
 
         for (let i = 0; i < lSystemString.length; i++) {
             const command = lSystemString[i];
@@ -693,6 +867,37 @@
     // ===========================================
     // UIコントロールと描画トリガー
     // ===========================================
+
+    function updateAngle(newAngle, shouldSaveHistory = true) {
+        state.globalAngle = parseFloat(newAngle);
+        angleSlider.value = state.globalAngle;
+        angleInput.value = state.globalAngle;
+        regenerateAndDraw();
+        updatePreview();
+        if (shouldSaveHistory) saveHistory();
+    }
+    
+    angleSlider.addEventListener('input', (e) => updateAngle(e.target.value, false));
+    angleSlider.addEventListener('change', () => saveHistory());
+    angleInput.addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value);
+        if (!isNaN(value)) {
+            updateAngle(value, false);
+        }
+    });
+    angleInput.addEventListener('change', () => saveHistory());
+
+    syncAngleButton.addEventListener('click', () => {
+        const globalAngle = state.globalAngle;
+        rhsRails.forEach(rail => {
+            Array.from(rail.querySelectorAll('.angle-input')).forEach(input => {
+                input.value = globalAngle.toFixed(1);
+            });
+        });
+        regenerateAndDraw();
+        updatePreview();
+        saveHistory();
+    });
     
     document.querySelectorAll('input[name="lineWidth"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
@@ -721,6 +926,15 @@
         regenerateAndDraw();
     });
 
+    keepDrawingCheckbox.addEventListener('change', () => {
+        saveHistory();
+        regenerateAndDraw();
+    });
+
+    colorByDepthCheckbox.addEventListener('change', () => {
+        saveHistory();
+        regenerateAndDraw();
+    });
 
     function updateZoom(newZoom, shouldSaveHistory = true) {
         state.zoom = newZoom;
@@ -729,6 +943,11 @@
         regenerateAndDraw();
         if (shouldSaveHistory) saveHistory();
     }
+
+    zoomSlider.addEventListener('input', (e) => {
+        updateZoom(parseFloat(e.target.value), false);
+    });
+    zoomSlider.addEventListener('change', () => saveHistory());
 
     document.getElementById('zoom-reset-button').addEventListener('click', () => {
         updateZoom(1.0);
@@ -757,15 +976,13 @@
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        const finalScaleFactor = newZoom / oldZoom;
+        const finalScaleFactor = newZoom / oldZoom; 
         
         const oldPanX = state.panX;
         const oldPanY = state.panY;
-        const autoPanX = state.autoPanX;
-        const autoPanY = state.autoPanY;
-        
-        state.panX = mouseX * (1 - finalScaleFactor) - autoPanX * (1 - finalScaleFactor) + oldPanX * finalScaleFactor;
-        state.panY = mouseY * (1 - finalScaleFactor) - autoPanY * (1 - finalScaleFactor) + oldPanY * finalScaleFactor;
+
+        state.panX = mouseX * (1 - finalScaleFactor) + oldPanX * finalScaleFactor;
+        state.panY = mouseY * (1 - finalScaleFactor) + oldPanY * finalScaleFactor;
 
         state.zoom = newZoom;
         zoomSlider.value = newZoom;
@@ -809,16 +1026,18 @@
         state.depth = Math.max(0, Math.min(state.limitedDepth, newDepth));
         depthValueSpan.textContent = state.depth;
         mainDepthDisplay.textContent = state.depth;
-        
-        regenerateAndDraw();
+
+        updateDepthButtonsState();
         
         if (shouldSaveHistory) {
-            saveHistory();
             state.panX = 0;
             state.panY = 0;
             state.zoom = 1.0;
             updateZoom(1.0, false); 
+            saveHistory();
         }
+        
+        regenerateAndDraw();
     }
 
     document.getElementById('depth-up').addEventListener('click', () => {
@@ -830,15 +1049,18 @@
     });
     
     function checkAndLimitDepth(drawTime) {
-        if (drawTime > state.targetDrawTime * 1.5 && state.depth === state.limitedDepth) {
-        } else if (drawTime > state.targetDrawTime * 1.5) {
+        const threshold = state.targetDrawTime * 1.5; 
+        
+        if (drawTime > threshold) {
             state.limitedDepth = state.depth;
             document.getElementById('max-depth-limit').textContent = state.limitedDepth;
             limitedDepthInfoSpan.textContent = state.limitedDepth;
-        } else if (drawTime < state.targetDrawTime * 0.5) {
+            updateDepthButtonsState();
+        } else if (drawTime < state.targetDrawTime * 0.5 && state.limitedDepth !== MAX_DEPTH_HARD_LIMIT) {
             state.limitedDepth = MAX_DEPTH_HARD_LIMIT;
             document.getElementById('max-depth-limit').textContent = MAX_DEPTH_HARD_LIMIT;
             limitedDepthInfoSpan.textContent = '適用なし';
+            updateDepthButtonsState();
         }
     }
 
@@ -847,100 +1069,131 @@
         saveHistory();
         regenerateAndDraw();
     });
+    
+    resetDrawingButton.addEventListener('click', () => {
+        state.panX = 0;
+        state.panY = 0;
+        updateZoom(1.0);
+        saveHistory();
+    });
 
-    function calculateAutoTransform(lSystemString, currentDepth, canvasWidth, canvasHeight) {
-        const rules = getCurrentRules();
-        const F_rule_Ff_count = (rules['F'] ? (rules['F'].match(/[Ff]/g) || []).length : 1);
-        const F_multiplier = F_rule_Ff_count > 0 ? F_rule_Ff_count : 1;
-        
-        const dynamicLineLength = 1.0 / Math.pow(F_multiplier, currentDepth); 
-        
-        const absMinDimension = Math.min(canvasWidth, canvasHeight) / 1000; 
-        const minSafeSize = Math.max(dynamicLineLength * 5, absMinDimension); 
 
-        const actualBounds = getLSystemBounds(lSystemString, state.globalAngle, dynamicLineLength);
-        
+    function calculateAutoTransform(lSystemString, canvasWidth, canvasHeight) {
+        const actualBounds = getLSystemBounds(lSystemString, state.globalAngle);
+
+        const minSafeSize = 1.0;
         const safeWidth = Math.max(actualBounds.width, minSafeSize);
         const safeHeight = Math.max(actualBounds.height, minSafeSize);
+        
+        const targetRatio = 0.9;
 
-        const targetRatio = 0.9; 
         const targetWidth = canvasWidth * targetRatio;
         const targetHeight = canvasHeight * targetRatio;
         
         let autoScale = 1.0;
-        
+
         if (safeWidth > 0 && safeHeight > 0) {
-             autoScale = Math.min(targetWidth / safeWidth, targetHeight / safeHeight);
-        } else {
-            autoScale = Math.min(canvasWidth, canvasHeight) * 0.5 / dynamicLineLength;
+            autoScale = Math.min(targetWidth / safeWidth, targetHeight / safeHeight);
         }
-        
+
         const autoPanX = canvasWidth / 2 - (actualBounds.width * autoScale) / 2 - actualBounds.minX * autoScale;
         const autoPanY = canvasHeight / 2 - (actualBounds.height * autoScale) / 2 - actualBounds.minY * autoScale;
 
-        state.autoScale = autoScale; 
+        state.autoScale = autoScale;
         state.autoPanX = autoPanX;
         state.autoPanY = autoPanY;
 
-        return { autoScale, autoPanX, autoPanY, bounds: actualBounds, dynamicLineLength };
+        return { autoScale, autoPanX, autoPanY, bounds: actualBounds };
     }
 
+
     function regenerateAndDraw() {
-        const startTime = performance.now(); 
-        
+        const startTime = performance.now();
         const axiom = document.getElementById('axiom-input').value;
         const iterations = state.depth;
         state.rules = getCurrentRules();
-        
         mainDepthDisplay.textContent = iterations;
-        
-        const lSystemStrings = generateLSystemWithDepth(axiom, state.rules, iterations);
-        drawLSystem(mainCtx, lSystemStrings, true);
 
-        const endTime = performance.now(); 
+        const lSystemStrings = generateLSystemWithDepth(axiom, state.rules, iterations);
+
+        if (mainCtx) {
+            drawLSystem(mainCtx, lSystemStrings, true);
+        }
+
+        updatePreview(lSystemStrings);
+
+        const endTime = performance.now();
         const drawTime = (endTime - startTime).toFixed(2);
         lastDrawTimeSpan.textContent = drawTime;
-        
         checkAndLimitDepth(parseFloat(drawTime));
     }
 
-
     // ===========================================
-    // 塗りつぶし専用ロジック
+    // 描画実装
     // ===========================================
 
-    function runFillPass(ctx, lSystemStrings, iterations, scale, panX, panY, startBaseX, startBaseY, F_multiplier, colorByDepth, keepDrawing) {
-        const startDepth = keepDrawing ? 0 : iterations; 
-        const endDepth = iterations; 
-        
-        ctx.globalAlpha = 1.0; 
+    function performDrawing(ctx, lSystemStrings, isMainCanvas, finalZoom, finalPanX, finalPanY, autoScale, startBaseX, startBaseY) {
+        const iterations = lSystemStrings.length - 1;
+        const L_SYSTEM_LENGTH_RATIO = 3.0; 
+        const manualZoom = state.zoom; 
+
+        if (state.fillEnclosed) {
+            runFillPass(ctx, lSystemStrings, iterations, finalZoom, finalPanX, finalPanY, startBaseX, startBaseY, colorByDepthCheckbox.checked, keepDrawingCheckbox.checked);
+        }
+
+        const startDepth = keepDrawingCheckbox.checked ? 0 : iterations;
+        const endDepth = iterations;
+        const baseLineWidth = getBaseLineWidth();
 
         for (let depth = startDepth; depth <= endDepth; depth++) {
             const lSystemString = lSystemStrings[depth];
-            
             let x = startBaseX;
             let y = startBaseY;
             let currentAngle = -90; 
+            const stack = [];
             
-            const lineLength = 1.0 / Math.pow(F_multiplier, depth);
-            
-            if (colorByDepth) {
-                const HUE_STEP = 30; 
-                const hue = (depth * HUE_STEP) % 360;
-                const minAlpha = 0.4; 
-                const maxAlpha = 0.6; 
-                const alpha = minAlpha + (maxAlpha - minAlpha) / iterations * depth; 
-                
-                ctx.fillStyle = `hsla(${hue}, 60%, 35%, ${alpha})`; 
+            const currentDisplacement = Math.pow(L_SYSTEM_LENGTH_RATIO, iterations - depth);
+
+            let lineWidth = baseLineWidth * manualZoom * Math.pow(state.thinningRate, depth);
+
+            if (state.baseEmphasisGlow && depth === 0) {
+                lineWidth = baseLineWidth * manualZoom * 1.5; 
+                ctx.shadowColor = '#00ffaa'; 
+                ctx.shadowBlur = baseLineWidth * 2 * manualZoom; 
             } else {
-                ctx.fillStyle = 'rgba(100, 100, 100, 0.4)'; 
+                ctx.shadowBlur = 0;
             }
+
+            if (colorByDepthCheckbox.checked) {
+                const HUE_STEP = 30;
+                const hue = (depth * HUE_STEP) % 360;
+                let saturation = 70;
+                let lightness = 65;
+                if (!isMainCanvas) {
+                    saturation = 100;
+                    lightness = 50;
+                    if (depth === 1) ctx.strokeStyle = 'white'; 
+                    if (depth === 2) ctx.strokeStyle = 'lime';  
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                    ctx.globalAlpha = (keepDrawingCheckbox.checked && depth < iterations) ? 0.3 : 1.0;
+                }
+            } else {
+                ctx.strokeStyle = 'white';
+                ctx.globalAlpha = (keepDrawingCheckbox.checked && depth < iterations) ? 0.3 : 1.0;
+            }
+
+            ctx.lineWidth = Math.max(0.5, lineWidth); 
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
             
-            const fillStack = []; 
+            ctx.beginPath();
+            ctx.moveTo(x * finalZoom + finalPanX, y * finalZoom + finalPanY);
 
             for (let i = 0; i < lSystemString.length; i++) {
                 const command = lSystemString[i];
-                let turnAngle = state.globalAngle; 
+                let turnAngle = state.globalAngle;
 
                 if (state.angleCommands.includes(command)) {
                     const angleMatch = lSystemString.substring(i).match(ANGLE_REGEX);
@@ -951,738 +1204,401 @@
                 }
 
                 switch (command) {
-                    case 'F': 
-                        const dx_F = lineLength * Math.cos(currentAngle * Math.PI / 180);
-                        const dy_F = lineLength * Math.sin(currentAngle * Math.PI / 180);
+                    case 'F':
+                        const dx_F = currentDisplacement * Math.cos(currentAngle * Math.PI / 180);
+                        const dy_F = currentDisplacement * Math.sin(currentAngle * Math.PI / 180);
+                        x += dx_F;
+                        y += dy_F;
+                        ctx.lineTo(x * finalZoom + finalPanX, y * finalZoom + finalPanY);
+                        break;
+                    case 'f':
+                        const dx_f = currentDisplacement * Math.cos(currentAngle * Math.PI / 180);
+                        const dy_f = currentDisplacement * Math.sin(currentAngle * Math.PI / 180);
+                        x += dx_f;
+                        y += dy_f;
+                        ctx.moveTo(x * finalZoom + finalPanX, y * finalZoom + finalPanY);
+                        break;
+                    case '+': currentAngle += turnAngle; break;
+                    case '-': currentAngle -= turnAngle; break;
+                    case '[':
+                        stack.push({ x, y, angle: currentAngle });
+                        break;
+                    case ']':
+                        const stateRestored = stack.pop();
+                        if (stateRestored) {
+                            x = stateRestored.x;
+                            y = stateRestored.y;
+                            currentAngle = stateRestored.angle;
+                        }
+                        ctx.moveTo(x * finalZoom + finalPanX, y * finalZoom + finalPanY);
+                        break;
+                }
+            }
+            ctx.stroke();
+        }
+    }
+
+    // ===========================================
+    // 塗りつぶし専用ロジック
+    // ===========================================
+
+    function runFillPass(ctx, lSystemStrings, iterations, scale, panX, panY, startBaseX, startBaseY, colorByDepth, keepDrawing) {
+        const startDepth = keepDrawing ? 0 : iterations;
+        const endDepth = iterations;
+        ctx.globalAlpha = 1.0; 
+        const L_SYSTEM_LENGTH_RATIO = 3.0; 
+
+        for (let depth = startDepth; depth <= endDepth; depth++) {
+            const lSystemString = lSystemStrings[depth];
+            let x = startBaseX;
+            let y = startBaseY;
+            let currentAngle = -90; 
+            
+            const currentDisplacement = Math.pow(L_SYSTEM_LENGTH_RATIO, iterations - depth);
+            
+            if (colorByDepth) {
+                const HUE_STEP = 30;
+                const hue = (depth * HUE_STEP) % 360;
+                const minAlpha = 0.4;
+                const maxAlpha = 0.6;
+                const alpha = minAlpha + (maxAlpha - minAlpha) / iterations * depth;
+                ctx.fillStyle = `hsla(${hue}, 60%, 35%, ${alpha})`;
+            } else {
+                ctx.fillStyle = 'rgba(100, 100, 100, 0.4)';
+            }
+            
+            const fillStack = [];
+            
+            for (let i = 0; i < lSystemString.length; i++) {
+                const command = lSystemString[i];
+                let turnAngle = state.globalAngle;
+
+                if (state.angleCommands.includes(command)) {
+                    const angleMatch = lSystemString.substring(i).match(ANGLE_REGEX);
+                    if (angleMatch) {
+                        turnAngle = parseFloat(angleMatch[2]);
+                        i += angleMatch[0].length - 1; 
+                    }
+                }
+
+                switch (command) {
+                    case 'F':
+                        const dx_F = currentDisplacement * Math.cos(currentAngle * Math.PI / 180);
+                        const dy_F = currentDisplacement * Math.sin(currentAngle * Math.PI / 180);
                         const newX_F = x + dx_F;
                         const newY_F = y + dy_F;
-                        
                         if (fillStack.length > 0) {
                             ctx.lineTo(newX_F * scale + panX, newY_F * scale + panY);
                         }
-                        
                         x = newX_F;
                         y = newY_F;
                         break;
-
                     case 'f':
-                        const dx_f = lineLength * Math.cos(currentAngle * Math.PI / 180);
-                        const dy_f = lineLength * Math.sin(currentAngle * Math.PI / 180);
+                        const dx_f = currentDisplacement * Math.cos(currentAngle * Math.PI / 180);
+                        const dy_f = currentDisplacement * Math.sin(currentAngle * Math.PI / 180);
                         x += dx_f;
                         y += dy_f;
-                        
                         if (fillStack.length > 0) {
-                            ctx.moveTo(x * scale + panX, y * scale + panY); 
+                            ctx.moveTo(x * scale + panX, y * scale + panY);
                         }
                         break;
-                        
                     case '+': currentAngle += turnAngle; break;
                     case '-': currentAngle -= turnAngle; break;
-                    case '[': 
-                        fillStack.push({ x, y, angle: currentAngle }); 
-                        ctx.beginPath(); 
-                        ctx.moveTo(x * scale + panX, y * scale + panY); 
+                    case '[':
+                        fillStack.push({ x, y, angle: currentAngle });
+                        ctx.beginPath();
+                        ctx.moveTo(x * scale + panX, y * scale + panY);
                         break;
-                    case ']': 
+                    case ']':
                         const fillState = fillStack.pop();
-                        
                         if (fillState) {
-                            ctx.closePath(); 
-                            ctx.fill(); 
-
+                            ctx.closePath();
+                            ctx.fill();
                             x = fillState.x;
                             y = fillState.y;
                             currentAngle = fillState.angle;
                         }
-                        
-                        ctx.moveTo(x * scale + panX, y * scale + panY); 
+                        ctx.moveTo(x * scale + panX, y * scale + panY);
                         break;
                 }
             }
         }
     }
 
-    function drawLSystem(ctx, lSystemStrings, isMainCanvas) { 
+
+    function drawLSystem(ctx, lSystemStrings, isMainCanvas) {
         const iterations = lSystemStrings.length - 1;
         const lSystemString = lSystemStrings[iterations];
-        
+        const canvas = isMainCanvas ? mainCanvas : previewCanvas;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (iterations < 0) return;
+
+        let startBaseX = 0;
+        let startBaseY = 0;
+        let finalZoom;
+        let finalPanX;
+        let finalPanY;
+        let autoScale; 
+
         if (isMainCanvas) {
-            const { autoScale, autoPanX, autoPanY, bounds, dynamicLineLength } = calculateAutoTransform(lSystemString, iterations, mainCanvas.width, mainCanvas.height);
-            
-            const startBaseX = 0; 
-            const startBaseY = 0;
+            const autoTransform = calculateAutoTransform(lSystemString, mainCanvas.width, mainCanvas.height);
+            autoScale = autoTransform.autoScale; 
+            finalZoom = autoScale * state.zoom;
+            finalPanX = autoTransform.autoPanX + state.panX;
+            finalPanY = autoTransform.autoPanY + state.panY;
 
-            const finalZoom = autoScale * state.zoom;
-            const finalPanX = autoPanX + state.panX;
-            const finalPanY = autoPanY + state.panY;
-            
-            performDrawing(ctx, lSystemStrings, true, finalZoom, finalPanX, finalPanY, startBaseX, startBaseY, bounds, dynamicLineLength);
-            
         } else {
-            const previewStringForBounds = lSystemStrings[Math.min(1, lSystemStrings.length - 1)]; 
-            const previewBounds = getLSystemBounds(previewStringForBounds, state.globalAngle, 1.0);
-            
+            const previewStringForBounds = lSystemStrings[Math.min(2, lSystemStrings.length - 1)]; 
+            const previewBounds = getLSystemBounds(previewStringForBounds, state.globalAngle); 
             const targetRatio = 0.9;
-            const targetWidth = previewCtx.canvas.width * targetRatio;
-            const targetHeight = previewCtx.canvas.height * targetRatio;
-            let autoScale = 1.0;
-            
-            const dynamicLineLength = 1.0;
-            const absMinDimension = Math.min(previewCtx.canvas.width, previewCtx.canvas.height) / 1000; 
-            const minSafeSize = Math.max(dynamicLineLength * 5, absMinDimension); 
-            const safeWidth = Math.max(previewBounds.width, minSafeSize);
-            const safeHeight = Math.max(previewBounds.height, minSafeSize);
+            const targetWidth = previewCanvas.width * targetRatio;
+            const targetHeight = previewCanvas.height * targetRatio;
 
-            if (safeWidth > 0 && safeHeight > 0) {
-                autoScale = Math.min(targetWidth / safeWidth, targetHeight / safeHeight);
-            } else if (previewStringForBounds.match(/[Ff]/g)) {
-                autoScale = Math.min(previewCtx.canvas.width, previewCtx.canvas.height) * 0.5 / dynamicLineLength;
+            let previewScale = 1.0;
+            if (previewBounds.width > 0 && previewBounds.height > 0) {
+                previewScale = Math.min(targetWidth / previewBounds.width, targetHeight / previewBounds.height);
             } else {
-                autoScale = 1.0; 
+                previewScale = Math.min(previewCanvas.width, previewCanvas.height) * 0.5;
             }
+
+            autoScale = previewScale; 
+            finalZoom = previewScale;
+            finalPanX = previewCanvas.width / 2 - (previewBounds.width * previewScale) / 2 - previewBounds.minX * previewScale;
+            finalPanY = previewCanvas.height / 2 - (previewBounds.height * previewScale) / 2 - previewBounds.minY * previewScale;
             
-            const previewPanX = previewCtx.canvas.width / 2 - (previewBounds.width * autoScale) / 2 - previewBounds.minX * autoScale;
-            const previewPanY = previewCtx.canvas.height / 2 - (previewBounds.height * autoScale) / 2 - previewBounds.minY * autoScale;
-
-
-            performDrawing(ctx, lSystemStrings, false, autoScale, previewPanX, previewPanY, 0, 0, previewBounds, 1.0);
+            lSystemStrings = lSystemStrings.slice(0, Math.min(lSystemStrings.length, 3));
         }
+        
+        performDrawing(ctx, lSystemStrings, isMainCanvas, finalZoom, finalPanX, finalPanY, autoScale, startBaseX, startBaseY);
     }
 
-    function performDrawing(ctx, lSystemStrings, isMainCanvas, scale, panX, panY, startBaseX, startBaseY, bounds, baseLineLength) {
-        const iterations = lSystemStrings.length - 1;
-        const colorByDepth = document.getElementById('color-by-depth').checked;
-        const keepDrawing = document.getElementById('keep-drawing').checked;
-        const fillEnclosed = document.getElementById('fill-enclosed-areas').checked;
+    function updatePreview(lSystemStrings = null) {
+        if (!previewCtx) return; 
 
-        let baseWidth = getBaseLineWidth(); 
-        const thinningRate = state.thinningRate; 
-
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); 
-        
-        const startDepth = isMainCanvas ? (keepDrawing ? 0 : iterations) : Math.min(1, iterations); 
-        const endDepth = isMainCanvas ? iterations : Math.min(2, iterations); 
-        
-        const rules = getCurrentRules();
-        const F_rule_Ff_count = (rules['F'] ? (rules['F'].match(/[Ff]/g) || []).length : 1);
-        const F_multiplier = F_rule_Ff_count > 0 ? F_rule_Ff_count : 1;
-
-        ctx.lineCap = 'round';   
-        ctx.lineJoin = 'round';  
-
-        if (fillEnclosed) {
-            runFillPass(ctx, lSystemStrings, iterations, scale, panX, panY, startBaseX, startBaseY, F_multiplier, colorByDepth, keepDrawing);
+        if (!lSystemStrings) {
+            const axiom = document.getElementById('axiom-input').value;
+            state.rules = getCurrentRules();
+            lSystemStrings = generateLSystemWithDepth(axiom, state.rules, 2); 
         }
-
-        const passes = [];
-        
-        if (isMainCanvas && state.baseEmphasisGlow) {
-            passes.push({ 
-                depthStart: 0,
-                depthEnd: 0,
-                lineWidthMultiplier: 4.0, 
-                strokeStyle: 'white',
-                globalAlpha: 0.05, 
-                isGlow: true
-            });
-        }
-        
-        if (!isMainCanvas) {
-            baseWidth = 1.0; 
-            passes.push({ 
-                depthStart: startDepth,
-                depthEnd: endDepth,
-                lineWidthMultiplier: 1.0, 
-                strokeStyle: null, 
-                globalAlpha: 1.0, 
-                isGlow: false
-            });
-        } else {
-            passes.push({ 
-                depthStart: startDepth,
-                depthEnd: endDepth,
-                lineWidthMultiplier: 1.0, 
-                strokeStyle: null, 
-                globalAlpha: 1.0, 
-                isGlow: false
-            });
-        }
-
-
-        for (const pass of passes) {
-            for (let depth = pass.depthStart; depth <= pass.depthEnd; depth++) {
-                
-                const lSystemString = lSystemStrings[depth];
-                
-                let x = startBaseX;
-                let y = startBaseY;
-                let currentAngle = -90; 
-                
-                const lineLength = 1.0 / Math.pow(F_multiplier, depth);
-                
-                const currentBaseWidth = baseWidth * pass.lineWidthMultiplier;
-                const currentThinningRate = pass.isGlow ? 1.0 : thinningRate; 
-
-                const ABSOLUTE_MAX_LINE_WIDTH = isMainCanvas ? 40.0 : 5.0; 
-                
-                let currentLineWidth = (currentBaseWidth * Math.pow(currentThinningRate, depth)); 
-                
-                currentLineWidth = Math.min(currentLineWidth, ABSOLUTE_MAX_LINE_WIDTH);
-                currentLineWidth = Math.max(0.5, currentLineWidth);
-
-                ctx.lineWidth = currentLineWidth; 
-
-
-                ctx.globalAlpha = pass.globalAlpha;
-                
-                if (pass.strokeStyle) {
-                    ctx.strokeStyle = pass.strokeStyle;
-                } else {
-                    if (colorByDepth) {
-                        const HUE_STEP = 30; 
-                        const hue = (depth * HUE_STEP) % 360;
-                        const alpha = isMainCanvas && keepDrawing && depth < iterations ? (0.2 + (0.8 / iterations) * depth) : 1.0;
-                        ctx.strokeStyle = `hsla(${hue}, 100%, 70%, ${alpha})`; 
-                    } else {
-                        const alpha = isMainCanvas && keepDrawing && depth < iterations ? (0.2 + (0.8 / iterations) * depth) : 1.0;
-                        ctx.strokeStyle = `hsla(0, 0%, 95%, ${alpha})`;
-                    }
-                }
-
-
-                const tempStack = []; 
-
-                ctx.beginPath(); 
-                ctx.moveTo(x * scale + panX, y * scale + panY); 
-                
-                for (let i = 0; i < lSystemString.length; i++) {
-                    const command = lSystemString[i];
-                    let turnAngle = state.globalAngle; 
-
-                    if (state.angleCommands.includes(command)) {
-                        const angleMatch = lSystemString.substring(i).match(ANGLE_REGEX);
-                        if (angleMatch) {
-                            turnAngle = parseFloat(angleMatch[2]);
-                            i += angleMatch[0].length - 1; 
-                        }
-                    }
-
-                    switch (command) {
-                        case 'F': 
-                        case 'f': 
-                            const dx = lineLength * Math.cos(currentAngle * Math.PI / 180);
-                            const dy = lineLength * Math.sin(currentAngle * Math.PI / 180);
-                            const newX = x + dx;
-                            const newY = y + dy;
-                            
-                            if (command === 'F') {
-                                ctx.lineTo(newX * scale + panX, newY * scale + panY);
-                            } else {
-                                ctx.moveTo(newX * scale + panX, newY * scale + panY);
-                            }
-                            x = newX;
-                            y = newY;
-                            break;
-                        case '+': currentAngle += turnAngle; break;
-                        case '-': currentAngle -= turnAngle; break;
-                        case '[': 
-                            tempStack.push({ x, y, angle: currentAngle }); 
-                            ctx.moveTo(x * scale + panX, y * scale + panY); 
-                            break;
-                        case ']': 
-                            const stateRestored = tempStack.pop();
-                            if (stateRestored) {
-                                x = stateRestored.x;
-                                y = stateRestored.y;
-                                currentAngle = stateRestored.angle;
-                            }
-                            ctx.moveTo(x * scale + panX, y * scale + panY); 
-                            break;
-                    }
-                }
-                
-                ctx.stroke(); 
-            }
-        }
-    }
-
-    function updatePreview() {
-        previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-        const axiom = document.getElementById('axiom-input').value;
-        state.rules = getCurrentRules();
-        const lSystemStrings = generateLSystemWithDepth(axiom, state.rules, 2); 
         drawLSystem(previewCtx, lSystemStrings, false);
     }
     
-    document.getElementById('color-by-depth').addEventListener('change', regenerateAndDraw);
-    document.getElementById('keep-drawing').addEventListener('change', regenerateAndDraw);
-
-
     // ===========================================
-    // ルールエディタとドラッグ＆ドロップ
+    // プリセットとドラッグ＆ドロップ
     // ===========================================
     
-    function createCardElement(command, angle = state.globalAngle) {
-        const card = document.createElement('div');
-        card.className = `card ${getCardColor(command)}`;
-        
-        const cardText = command === '+' || command === '-' ? angle : command;
-        card.textContent = cardText;
-        
-        card.style.color = getCardTextColor(command); 
-        
-        card.setAttribute('data-command', command);
-        if (command === '+' || command === '-') {
-            card.setAttribute('data-angle', angle);
+    const PRESETS = {
+        'koch-curve': {
+            axiom: 'F',
+            globalAngle: 60.0,
+            rules: { 'X': '', 'F': 'F+(60)F-(120)F+(60)F', 'Y': '' }
+        },
+        'koch-snowflake': {
+            axiom: 'F++F++F',
+            globalAngle: 60.0,
+            rules: { 'X': '', 'F': 'F+(60)F-(120)F+(60)F', 'Y': '' }
+        },
+        'ring': { 
+            axiom: 'X',
+            globalAngle: 60.0,
+            rules: { 'X': 'FX', 'F': 'F++F++F', 'Y': '' } 
+        },
+        'sierpinski-arrowhead': {
+            axiom: 'F',
+            globalAngle: 60.0,
+            rules: { 'F': 'X+(60)F+(60)X', 'X': 'F-(60)X-(60)F', 'Y': '' }
+        },
+        'dragon': { // 修正: 標準的なドラゴン曲線
+            axiom: 'FX', 
+            globalAngle: 90.0,
+            rules: { 'X': 'X+(90)YF', 'F': 'F', 'Y': 'FX-(90)Y' } 
+        },
+        'koch-island': {
+            axiom: 'F+F+F+F',
+            globalAngle: 90.0,
+            rules: { 'X': '', 'F': 'F+F-F-F+F', 'Y': '' }
+        },
+        'bush': {
+            axiom: 'F',
+            globalAngle: 25.0,
+            rules: { 'X': '', 'F': 'FF-[-(25)+F+F]+[+(25)+F-F]', 'Y': '' }
+        },
+        'h-tree': {
+            axiom: 'F',
+            globalAngle: 90.0,
+            rules: { 'X': '', 'F': 'F[+(90)F][-(90)F]', 'Y': '' } 
         }
-        card.draggable = true;
-        
-        card.addEventListener('error', () => {
-             card.style.color = getCardTextColor(command); 
-        });
-
-        return card;
-    }
-
-    function createRHSContainer(command, angle = state.globalAngle) {
-        const container = document.createElement('div');
-        container.className = 'rhs-card-container';
-        container.draggable = false; // ドラッグを禁止
-        
-        container.setAttribute('data-id', `rhs-card-${cardIdCounter++}`); 
-        
-        const card = createCardElement(command, angle);
-        
-        card.style.cursor = 'default'; 
-
-        container.appendChild(card);
-        
-        if (command === '+' || command === '-') {
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.className = 'card-property angle-input';
-            input.value = angle;
-            input.min = '1';
-            input.max = '180';
-            input.step = '0.1';
-            input.addEventListener('input', (e) => {
-                const newAngle = parseFloat(e.target.value);
-                card.setAttribute('data-angle', newAngle);
-                card.textContent = newAngle;
-                updatePreview();
-            });
-            input.addEventListener('change', () => saveHistory());
-            container.appendChild(input);
-        }
-        
-        const deleteButton = document.createElement('button');
-        deleteButton.textContent = 'x';
-        deleteButton.style.cssText = 'position: absolute; top: -10px; right: -5px; background: red; color: white; border: none; border-radius: 50%; width: 15px; height: 15px; font-size: 0.7em; padding: 0; cursor: pointer;';
-        deleteButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            container.remove();
-            updatePreview();
-            saveHistory();
-        });
-        container.appendChild(deleteButton);
-        
-        // ⭐️ 修正: ドラッグ開始イベントをキャンセルし、ドラッグを完全に禁止する ⭐️
-        // これで、カードがカーソルに追従する動作を強制的に止めます。
-        container.addEventListener('dragstart', (e) => {
-            e.preventDefault(); 
-            e.stopPropagation();
-        });
-
-        return container;
-    }
+        // sierpinski-gasket は一旦削除しました
+    };
     
-    function getCardColor(command) {
-        if (command === 'F' || command === '+' || command === '-') return 'color-green';
-        if (command === 'X' || command === 'Y' || command === '[') return 'color-cyan';
-        if (command === 'f' || command === ']') return 'color-magenta';
-        return '';
-    }
-    
-    function getCardTextColor(command) {
-        if (command === 'F' || command === '+' || command === '-') return '#4caf50'; 
-        if (command === 'X' || command === 'Y' || command === '[') return '#00bcd4'; 
-        if (command === 'f' || command === ']') return '#e91e63'; 
-        return '#d4d4d4'; 
-    }
-
-    function getCurrentRules() {
-        const rules = {};
-        rhsRails.forEach(rail => {
-            const target = rail.getAttribute('data-target');
-            const ruleString = Array.from(rail.querySelectorAll('.rhs-card-container')).map(container => {
-                const card = container.querySelector('.card');
-                if (!card) return '';
-                
-                let command = card.getAttribute('data-command');
-                
-                if (command === '+' || command === '-') {
-                    const angle = card.getAttribute('data-angle');
-                    return `${command}(${angle})`; 
-                }
-                return command;
-            }).join('');
-            rules[target] = ruleString;
-        });
-        return rules;
-    }
-
-
-    function applyRulesToRail(rail, ruleString, globalAngle) {
-        const marker = rail.querySelector('.insertion-marker'); 
-        rail.innerHTML = ''; 
-        if(marker) rail.appendChild(marker); 
-        
-        let i = 0;
-        while (i < ruleString.length) {
-            let command = ruleString[i];
-            let angle = globalAngle; 
-            
-            if (state.angleCommands.includes(command)) {
-                const angleMatch = ruleString.substring(i).match(ANGLE_REGEX);
-                if (angleMatch) {
-                    command = angleMatch[1]; 
-                    angle = parseFloat(angleMatch[2]); 
-                    rail.appendChild(createRHSContainer(command, angle));
-                    i += angleMatch[0].length;
-                    continue;
-                }
-            }
-            
-            if (['F', 'X', 'Y', 'f', '[', ']'].includes(command)) {
-                rail.appendChild(createRHSContainer(command));
-            } 
-            else if (command === '+' || command === '-') {
-                rail.appendChild(createRHSContainer(command, globalAngle));
-            }
-            
-            i++;
-        }
-    }
-
     function loadPreset(presetName) {
-        let preset;
-        switch(presetName) {
-            case 'koch-curve':
-                preset = { axiom: 'F', rules: { 'F': 'F+(60)F-(120)F+(60)F', 'X': '', 'Y': '' }, angle: 60 };
-                break;
-            case 'koch-snowflake':
-                preset = { axiom: 'F++F++F', rules: { 'F': 'F+(60)F-(120)F+(60)F', 'X': '', 'Y': '' }, angle: 60 };
-                break;
-            case 'sierpinski-arrowhead':
-                preset = { axiom: 'F', rules: { 'F': 'X+F+Y', 'X': 'Y-F-X', 'Y': 'F+Y+F' }, angle: 60 };
-                break;
-            case 'dragon':
-                preset = { axiom: 'F', rules: { 'F': 'F+G+', 'G': '-F-G', 'X': '', 'Y': '' }, angle: 90 };
-                break;
-            case 'koch-island':
-                preset = { axiom: 'F+F+F+F', rules: { 'F': 'F+f-FF+F+FF+Ff+FF-f+FF-F-FF-Ff-FFF', 'X': '', 'Y': '' }, angle: 90 };
-                break;
-            case 'bush':
-                preset = { axiom: 'X', rules: { 'F': 'FF', 'X': 'F-[[X]+X]+F[+FX]-X', 'Y': '' }, angle: 22.5 };
-                break;
-            case 'h-tree':
-                preset = { axiom: 'F', rules: { 'F': 'f[+F][-F]', 'X': '', 'Y': '' }, angle: 90 };
-                break;
-            default:
-                return;
-        }
+        const preset = PRESETS[presetName];
+        if (!preset) return;
+        
+        saveHistory(); 
         
         document.getElementById('axiom-input').value = preset.axiom;
-        state.globalAngle = preset.angle;
-        updateAngle(preset.angle, false);
-
-        applyRulesToRail(document.getElementById('rhs-rail-f'), preset.rules.F || '', preset.angle);
-        applyRulesToRail(document.getElementById('rhs-rail-x'), preset.rules.X || '', preset.angle);
-        applyRulesToRail(document.getElementById('rhs-rail-y'), preset.rules.Y || '', preset.angle);
-
-        updateDepth(0, false);
-        history.length = 0;
-        historyIndex = -1;
-        saveHistory();
+        updateAngle(preset.globalAngle, false); 
         
-        regenerateAndDraw();
-        updatePreview();
-    }
+        const railF = document.getElementById('rhs-rail-f');
+        const railX = document.getElementById('rhs-rail-x');
+        const railY = document.getElementById('rhs-rail-y'); 
 
-    document.getElementById('preset-select').addEventListener('change', (e) => {
-        loadPreset(e.target.value);
-    });
-    
-    document.getElementById('random-rule-button').addEventListener('click', () => {
-        const alphabet = ['F', 'X', 'Y', '+', '-', '[', ']', 'f'];
-        const ruleLength = Math.floor(Math.random() * 8) + 3; 
-        let newRuleF = '';
-        let newRuleX = '';
-
-        for (let i = 0; i < ruleLength; i++) {
-            newRuleF += alphabet[Math.floor(Math.random() * alphabet.length)];
-            newRuleX += alphabet[Math.random() * alphabet.length];
-        }
+        // applyRulesToRail を使ってカードを生成し、レールに配置
+        // プリセット読み込み時に、ルールが空の場合は空文字列 ('') を渡すことで、レールをクリアする
+        if (railF) applyRulesToRail(railF, preset.rules.F || '', preset.globalAngle);
+        if (railX) applyRulesToRail(railX, preset.rules.X || '', preset.globalAngle);
+        if (railY) applyRulesToRail(railY, preset.rules.Y || '', preset.globalAngle);
         
-        const randomAngle = Math.floor(Math.random() * 170) + 10; 
-        
-        document.getElementById('axiom-input').value = 'X';
-        state.globalAngle = randomAngle;
-        updateAngle(randomAngle, false);
-
-        applyRulesToRail(document.getElementById('rhs-rail-f'), newRuleF, randomAngle);
-        applyRulesToRail(document.getElementById('rhs-rail-x'), newRuleX, randomAngle);
-        applyRulesToRail(document.getElementById('rhs-rail-y'), '', randomAngle);
-        
-        updateDepth(0, false);
-        saveHistory();
-        
-        regenerateAndDraw();
-        updatePreview();
-    });
-
-
-    document.getElementById('axiom-input').addEventListener('input', () => {
-        updatePreview();
-    });
-    document.getElementById('axiom-input').addEventListener('change', () => {
-        saveHistory();
-        updateDepth(0, false);
-        regenerateAndDraw();
-    });
-
-    document.getElementById('clear-all-button').addEventListener('click', () => {
-        document.getElementById('axiom-input').value = 'F';
-        applyRulesToRail(document.getElementById('rhs-rail-f'), 'F', state.globalAngle);
-        applyRulesToRail(document.getElementById('rhs-rail-x'), '', state.globalAngle);
-        applyRulesToRail(document.getElementById('rhs-rail-y'), '', state.globalAngle);
-        updateDepth(0, false);
-        saveHistory();
-    });
-    
-    document.getElementById('reset-drawing-button').addEventListener('click', () => {
+        updateDepth(0, false); 
         state.panX = 0;
         state.panY = 0;
         state.zoom = 1.0;
         updateZoom(1.0, false); 
-        updateDepth(0, false); 
-        regenerateAndDraw();
+        
         saveHistory();
-    });
-
-
-    function updateAngle(newAngle, shouldSaveHistory = true) {
-        state.globalAngle = newAngle;
-        angleSlider.value = newAngle;
-        angleInput.value = newAngle;
-
-        document.querySelectorAll('.rhs-rail .card[data-command="+"], .rhs-rail .card[data-command="-"]').forEach(card => {
-            const input = card.parentElement.querySelector('.angle-input');
-            if (input) {
-                if(parseFloat(card.getAttribute('data-angle')) === newAngle) { 
-                    input.value = newAngle;
-                    card.setAttribute('data-angle', newAngle);
-                    card.textContent = newAngle;
-                }
-            }
+    }
+    
+    if (presetSelect) { 
+        presetSelect.addEventListener('change', (e) => {
+            loadPreset(e.target.value);
         });
-
-        updatePreview();
-        if (shouldSaveHistory) saveHistory();
     }
 
-    angleSlider.addEventListener('input', (e) => {
-        updateAngle(parseFloat(e.target.value), false);
+    axiomInput.addEventListener('input', () => {
+        updatePreview();
     });
-    angleSlider.addEventListener('change', () => {
-        updateAngle(parseFloat(angleSlider.value), true);
-        regenerateAndDraw();
-    });
-
-    angleInput.addEventListener('change', (e) => {
-        updateAngle(parseFloat(e.target.value), true);
+    axiomInput.addEventListener('change', () => {
+        saveHistory();
         regenerateAndDraw();
     });
     
-    document.getElementById('sync-angle-button').addEventListener('click', () => {
-        const newAngle = state.globalAngle;
-        document.querySelectorAll('.rhs-rail .card[data-command="+"], .rhs-rail .card[data-command="-"]').forEach(card => {
-            const input = card.parentElement.querySelector('.angle-input');
-            if (input) {
-                input.value = newAngle;
-                card.setAttribute('data-angle', newAngle);
-                card.textContent = newAngle;
-            }
-        });
+    clearAllButton.addEventListener('click', () => {
+        saveHistory();
+        document.getElementById('axiom-input').value = '';
+        document.getElementById('rhs-rail-f').innerHTML = '<div class="insertion-marker"></div>';
+        document.getElementById('rhs-rail-x').innerHTML = '<div class="insertion-marker"></div>';
+        document.getElementById('rhs-rail-y').innerHTML = '<div class="insertion-marker"></div>';
+        regenerateAndDraw();
         updatePreview();
         saveHistory();
     });
 
-    // ----------------------------------------------------
-    // IX. ドラッグ＆ドロップロジック (パレットからの挿入のみ) 
-    // ----------------------------------------------------
+    randomRuleButton.addEventListener('click', () => {
+        alert('ランダムルール生成機能は未実装です。');
+    });
 
-    // パレットからのドラッグ開始 (コピー)
-    document.querySelectorAll('#palette-cards .card').forEach(card => {
+    // ===========================================
+    // ドラッグ＆ドロップロジック
+    // ===========================================
+    
+    paletteContainer.querySelectorAll('.card').forEach(card => {
         card.addEventListener('dragstart', (e) => {
-            const command = card.getAttribute('data-command');
-            const angle = card.getAttribute('data-angle') || state.globalAngle; 
-            
-            const dataJson = JSON.stringify({
-                command: command,
-                angle: parseFloat(angle),
-                isPalette: true
-            });
-            
-            // dataTransferにデータをセットし、source-typeも設定
-            const htmlContent = `<div data-drag-data='${dataJson}'></div>`;
-            e.dataTransfer.setData('text/html', htmlContent); 
-            e.dataTransfer.setData('text/plain', dataJson); 
-            e.dataTransfer.setData('source-type', 'palette'); // カスタムタイプ
+            e.dataTransfer.setData('text/plain', e.target.dataset.command);
             e.dataTransfer.effectAllowed = 'copy';
+            e.target.style.opacity = '0.4'; 
+        });
+        card.addEventListener('dragend', (e) => {
+            e.target.style.opacity = '1.0';
         });
     });
 
-    // ルールレールのD&Dロジック
     rhsRails.forEach(rail => {
         const marker = rail.querySelector('.insertion-marker');
-        if (!marker) return;
 
-        // dragoverで挿入位置を視覚的にフィードバック
         rail.addEventListener('dragover', (e) => {
-            e.preventDefault(); 
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
             
-            // ⭐️ 修正: dragoverイベントではdataTransfer.getData()がセキュリティ上空になることが多いため、
-            // ソースチェックを削除し、パレットからのドラッグは常に許可する (レール内ドラッグは個別に禁止済み)
-            e.dataTransfer.dropEffect = 'copy'; // パレットからのドラッグを想定
-
             const dropX = e.clientX;
-            // const dropY = e.clientY; // Y座標は使わないが、マウス位置は使う 
-
-            let closestChild = null;
-            let minDistanceSq = Infinity; 
+            let minDistanceSq = Infinity;
             
-            const searchableChildren = Array.from(rail.children).filter(child => child !== marker);
+            const searchableChildren = Array.from(rail.children).filter(child => child.classList.contains('rhs-card-container'));
 
-            // ドロップ位置に最も近いカードを見つける 
-            searchableChildren.forEach(child => {
-                const childRect = child.getBoundingClientRect();
-                
-                // 距離の代わりに、レールのY軸範囲内にあるかを確認
-                const railRect = rail.getBoundingClientRect();
-                if (e.clientY < railRect.top || e.clientY > railRect.bottom) return; 
-
-                const childCenterX = childRect.left + childRect.width / 2;
-                const childCenterY = childRect.top + childRect.height / 2;
-                
-                // Y軸の距離を小さくし、X軸の距離を優先して最短を探す
-                const distanceSq = Math.pow(dropX - childCenterX, 2) * 0.1 + Math.pow(e.clientY - childCenterY, 2) * 0.9;
-
-                if (distanceSq < minDistanceSq) {
-                    minDistanceSq = distanceSq;
-                    closestChild = child;
-                }
-            });
-
-
-            let targetChildForMarker = null;
-            let insertBefore = true; 
-
-            if (closestChild) {
-                const closestRect = closestChild.getBoundingClientRect();
-                if (dropX < closestRect.left + closestRect.width / 2) {
-                    targetChildForMarker = closestChild; 
-                    insertBefore = true;
-                } else {
-                    targetChildForMarker = closestChild; 
-                    insertBefore = false;
-                }
-            }
-            
-            // レールが空の場合
+            let targetNode = null;
             if (searchableChildren.length === 0) {
-                const railRect = rail.getBoundingClientRect();
-                marker.style.left = '3px'; // Rail padding
-                marker.style.height = `${railRect.height - 6}px`; // Rail padding/borderを考慮
-                marker.style.top = '3px'; // Rail padding top
-                marker.style.display = 'block';
-                return;
-            }
-
-            // マーカーの表示と移動
-            if (targetChildForMarker) {
-                const railRect = rail.getBoundingClientRect();
-                const targetRect = targetChildForMarker.getBoundingClientRect();
-                
-                let markerLeft;
-                if (insertBefore) {
-                    markerLeft = targetRect.left - railRect.left;
-                } else {
-                    markerLeft = targetRect.right - railRect.left;
-                }
-                
-                marker.style.left = `${Math.max(0, markerLeft - 1)}px`; 
-                marker.style.height = `${railRect.height - 6}px`; // レール全体の高さに合わせる
-                marker.style.top = `3px`; // レール全体の高さに合わせる
-                marker.style.display = 'block';
+                targetNode = marker;
             } else {
-                 marker.style.display = 'none';
+                searchableChildren.forEach(child => {
+                    const childRect = child.getBoundingClientRect();
+                    
+                    const childCenterX = childRect.left + childRect.width / 2;
+                    const distance = Math.abs(dropX - childCenterX); 
+
+                    if (distance < minDistanceSq) {
+                        minDistanceSq = distance;
+                        if (dropX < childCenterX) {
+                             targetNode = child;
+                        } else {
+                             targetNode = child.nextElementSibling || marker;
+                        }
+                    }
+                });
+                
+                if(targetNode === marker && searchableChildren.length > 0) {
+                    const lastChild = searchableChildren[searchableChildren.length - 1];
+                    const rect = lastChild.getBoundingClientRect();
+                    if (dropX > rect.right) {
+                         targetNode = marker;
+                    } else if (dropX > rect.left + rect.width / 2) {
+                         targetNode = marker;
+                    } else {
+                         targetNode = lastChild;
+                    }
+                }
             }
-        });
-        
-        // dragleaveでマーカーを非表示にする
-        rail.addEventListener('dragleave', (e) => {
-            if (e.relatedTarget && !rail.contains(e.relatedTarget)) {
-                marker.style.display = 'none';
+
+            if (targetNode && targetNode.classList.contains('rhs-card-container')) {
+                 const rect = targetNode.getBoundingClientRect();
+                 marker.style.height = `${rect.height}px`;
+                 marker.style.top = `${rect.top - rail.getBoundingClientRect().top}px`;
+                 marker.style.left = `${rect.left - rail.getBoundingClientRect().left}px`;
+                 marker.style.transform = 'translateX(-100%)';
+            } else if (targetNode === marker) {
+                if (searchableChildren.length > 0) {
+                    const lastChild = searchableChildren[searchableChildren.length - 1];
+                    const rect = lastChild.getBoundingClientRect();
+                    marker.style.height = `${rect.height}px`;
+                    marker.style.top = `${rect.top - rail.getBoundingClientRect().top}px`;
+                    marker.style.left = `${rect.right - rail.getBoundingClientRect().left}px`;
+                    marker.style.transform = 'translateX(0)';
+                } else {
+                    marker.style.height = '100%';
+                    marker.style.top = '0';
+                    marker.style.left = '3px';
+                    marker.style.transform = 'translateX(0)';
+                }
             }
+            marker.style.display = 'block';
+
         });
 
-        // ドロップ時の処理 (パレットからのドロップのみ)
+        rail.addEventListener('dragleave', () => {
+            marker.style.display = 'none';
+        });
+
         rail.addEventListener('drop', (e) => {
             e.preventDefault();
-            marker.style.display = 'none'; 
+            marker.style.display = 'none';
+            const command = e.dataTransfer.getData('text/plain');
             
-            // dropイベントではsourceTypeのデータ取得は信頼できます。
-            const sourceType = e.dataTransfer.getData('source-type');
-            if (sourceType !== 'palette') return; // パレットからのドロップのみを処理
+            if (!command) return;
 
-            let cardToInsert = null;
-            let data = null;
-            try {
-                // ドロップデータの抽出
-                const dataJson = e.dataTransfer.getData('text/plain');
-                data = JSON.parse(dataJson);
-                
-                if (data && data.isPalette) {
-                    cardToInsert = createRHSContainer(data.command, data.angle);
-                } else {
-                    return;
-                }
-                
-            } catch (error) {
-                console.error('Palette drop error (Data extraction/parse failed):', error);
-                return;
-            }
-
-            // 挿入位置の決定ロジック (dragoverと同期) 
+            const cardToInsert = createCardContainer(command, state.globalAngle);
             const dropX = e.clientX;
             
             let closestChild = null;
-            let minDistanceSq = Infinity; 
-
-            const searchableChildren = Array.from(rail.children).filter(child => child !== marker);
+            let minDistanceSq = Infinity;
             
+            const searchableChildren = Array.from(rail.children).filter(child => child.classList.contains('rhs-card-container'));
+
             searchableChildren.forEach(child => {
                 const childRect = child.getBoundingClientRect();
-                
-                const railRect = rail.getBoundingClientRect();
-                if (e.clientY < railRect.top || e.clientY > railRect.bottom) return; 
-
                 const childCenterX = childRect.left + childRect.width / 2;
-                const childCenterY = childRect.top + childRect.height / 2;
                 
-                // Y軸の距離を小さくし、X軸の距離を優先して最短を探す
-                const distanceSq = Math.pow(dropX - childCenterX, 2) * 0.1 + Math.pow(e.clientY - childCenterY, 2) * 0.9;
+                const distanceSq = Math.pow(dropX - childCenterX, 2); 
 
                 if (distanceSq < minDistanceSq) {
                     minDistanceSq = distanceSq;
@@ -1700,19 +1616,26 @@
                     targetNode = closestChild.nextElementSibling; 
                 }
             } else {
-                targetNode = null; 
+                targetNode = rail.querySelector('.insertion-marker').nextElementSibling;
             }
 
-            rail.insertBefore(cardToInsert, targetNode);
+            if (targetNode === rail.querySelector('.insertion-marker')) {
+                rail.insertBefore(cardToInsert, targetNode);
+            } else {
+                rail.insertBefore(cardToInsert, targetNode);
+            }
             
             updatePreview();
+            regenerateAndDraw();
             saveHistory();
         });
     });
 
+    // --- 初期化 ---
     loadPreset('koch-curve'); 
     resizeCanvas(); 
 });
-    </script>
+</script>
+    
 </body>
 </html>
